@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "description": "Optional: npm install && npx playwright install chromium — for demo.js only",
+  "dependencies": {
+    "playwright": "^1.49.1"
+  }
+}
