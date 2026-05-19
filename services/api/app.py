@@ -133,6 +133,7 @@ def create_app() -> FastAPI:
         therapy_notes_router,
         extract_router,
         proxy_sanity_router,
+        demo_dashboard_router,
     )
     from .routes.element_picker import router as element_picker_router
 
@@ -143,6 +144,7 @@ def create_app() -> FastAPI:
     app.include_router(therapy_notes_router, prefix="/api")
     app.include_router(extract_router, prefix="/api")
     app.include_router(proxy_sanity_router, prefix="/api")
+    app.include_router(demo_dashboard_router, prefix="/api")
 
     # Mount frontend static files
     frontend_path = os.path.join(os.path.dirname(__file__), "..", "..", "frontend")
@@ -153,6 +155,17 @@ def create_app() -> FastAPI:
         async def serve_frontend():
             """Serve the frontend index.html."""
             return FileResponse(os.path.join(frontend_path, "index.html"))
+
+        @app.get("/demo")
+        async def serve_demo_dashboard():
+            """Unified intake demo dashboard (Patient Intake Agent)."""
+            demo_html = os.path.join(frontend_path, "demo.html")
+            if not os.path.isfile(demo_html):
+                return JSONResponse(
+                    status_code=404,
+                    content={"detail": "demo.html not found"},
+                )
+            return FileResponse(demo_html)
 
     # Legacy endpoint for backward compatibility with original frontend
     @app.post("/run-workflow")

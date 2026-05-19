@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<!--
+  Patient Intake Agent — unified demo dashboard.
+  Start API: python run_api.py
+  Open: http://127.0.0.1:8080/demo (use your server host/port; default API port is 8080 from config).
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=1280" />
+  <title>Patient Intake Agent · Demo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #f7f6f2;
+      --surface: #ffffff;
+      --border: #e4e2da;
+      --text: #1a1a18;
+      --muted: #5c5a54;
+      --accent: #2d4a87;
+      --accent-hover: #243c6f;
+      --success: #1d6e4f;
+      --warn: #8a5a0f;
+      --error: #8b2c2c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Inter", system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.45;
+      min-height: 100vh;
+    }
+    .layout { display: flex; min-height: 100vh; }
+    .sidebar {
+      width: 220px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 24px 18px;
+      flex-shrink: 0;
+    }
+    .sidebar h1 {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin: 0 0 28px;
+      line-height: 1.4;
+    }
+    .nav-item {
+      padding: 8px 10px;
+      border-radius: 6px;
+      color: var(--muted);
+      font-weight: 500;
+      margin-bottom: 4px;
+      cursor: default;
+    }
+    .nav-item.active { background: #eef1f7; color: var(--accent); }
+    .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    .stats {
+      display: flex;
+      gap: 24px;
+      padding: 16px 28px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+    .stat { min-width: 140px; }
+    .stat .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    .stat .value { font-size: 20px; font-weight: 600; margin-top: 2px; }
+    .stat .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .content { display: flex; flex: 1; min-height: 0; }
+    .queue-col {
+      width: 380px;
+      border-right: 1px solid var(--border);
+      padding: 20px 22px;
+      overflow-y: auto;
+      background: var(--bg);
+    }
+    .detail-col { flex: 1; padding: 20px 28px; overflow-y: auto; background: var(--bg); }
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 18px 20px;
+      margin-bottom: 16px;
+    }
+    .panel h2 { margin: 0 0 12px; font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 18px;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 13px;
+      border: none;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+    .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn-ghost { background: transparent; color: var(--accent); border: 1px solid var(--border); margin-top: 10px; }
+    .lead-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-bottom: 10px;
+      background: var(--surface);
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    .lead-card:hover { border-color: #c9c5ba; }
+    .lead-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    .lead-card .row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+    .lead-card .name { font-weight: 600; font-size: 15px; }
+    .badge {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      padding: 3px 7px;
+      border-radius: 4px;
+      background: #eef1f7;
+      color: var(--accent);
+    }
+    .badge.new { background: #e8f4ef; color: var(--success); }
+    .meta { font-size: 12px; color: var(--muted); margin-top: 6px; }
+    .bar-wrap { height: 4px; background: #ebe9e4; border-radius: 2px; margin-top: 10px; overflow: hidden; }
+    .bar { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.25s ease; }
+    .progress-panel .spinner {
+      width: 18px; height: 18px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      display: inline-block;
+      vertical-align: middle;
+      margin-right: 10px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .log-lines { font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted); max-height: 120px; overflow-y: auto; white-space: pre-wrap; background: #fafaf8; border: 1px solid var(--border); border-radius: 6px; padding: 10px; margin-top: 12px; }
+    .detail-section { margin-bottom: 18px; }
+    .detail-section h3 { font-size: 12px; font-weight: 600; color: var(--muted); margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.03em; }
+    .kv { display: grid; grid-template-columns: 160px 1fr; gap: 6px 12px; font-size: 13px; }
+    .kv .k { color: var(--muted); }
+    .audit { font-size: 12px; color: var(--muted); border-left: 2px solid var(--border); padding-left: 12px; margin-top: 8px; }
+    .audit div { margin-bottom: 6px; }
+    .error-banner {
+      background: #fdf2f2;
+      border: 1px solid #e8cfcf;
+      color: var(--error);
+      padding: 12px 14px;
+      border-radius: 6px;
+      margin-top: 12px;
+      font-size: 13px;
+    }
+    .complete-summary { color: var(--success); font-weight: 600; font-size: 15px; margin-top: 8px; }
+    .muted { color: var(--muted); font-size: 12px; margin-top: 6px; }
+    .actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <h1>Patient Intake Agent · v0.1 · Phase 1 MVP</h1>
+      <div class="nav-item active">Ready to submit</div>
+      <div class="nav-item">Exceptions</div>
+      <div class="nav-item">Processed today</div>
+    </aside>
+    <div class="main">
+      <div class="stats">
+        <div class="stat"><div class="label">Processed today</div><div class="value">52</div><div class="sub">Live queue (demo)</div></div>
+        <div class="stat"><div class="label">Auto-completed</div><div class="value">43</div><div class="sub">83% of intakes</div></div>
+        <div class="stat"><div class="label">Avg confidence</div><div class="value">91%</div><div class="sub">Rolling 24h (stub)</div></div>
+        <div class="stat"><div class="label">Exceptions</div><div class="value">4</div><div class="sub">Awaiting review</div></div>
+      </div>
+      <div class="content">
+        <div class="queue-col">
+          <div id="run-card-idle" class="panel">
+            <h2>Automation</h2>
+            <p style="margin:0 0 14px;color:var(--muted);font-size:13px;">Simulate the agent processing a fresh lead from the website form.</p>
+            <button type="button" class="btn btn-primary" id="btn-run">Run agent on new intake</button>
+          </div>
+          <div id="run-card-progress" class="panel progress-panel hidden">
+            <h2>Agent running</h2>
+            <div id="prog-spinner"><span class="spinner"></span><span id="prog-status-text">Initializing…</span></div>
+            <div style="margin-top:14px;font-size:12px;color:var(--muted);">Current section</div>
+            <div id="prog-section" style="font-weight:600;margin-top:4px;">—</div>
+            <div class="bar-wrap" style="margin-top:12px;"><div class="bar" id="prog-bar" style="width:0%"></div></div>
+            <div id="prog-fields" style="margin-top:8px;font-size:12px;color:var(--muted);">0 of 29 fields</div>
+            <div class="log-lines" id="prog-log"></div>
+            <div id="prog-eta" class="muted"></div>
+          </div>
+          <div id="run-card-complete" class="panel hidden">
+            <h2>Complete</h2>
+            <div class="complete-summary" id="complete-summary"></div>
+            <p class="muted" id="complete-sub"></p>
+            <button type="button" class="btn btn-primary" id="btn-again">Run agent again</button>
+          </div>
+          <div id="run-error" class="error-banner hidden"></div>
+          <button type="button" class="btn btn-ghost hidden" id="btn-retry" style="margin-top:10px;">Try again</button>
+
+          <h2 style="margin:20px 0 10px;">Queue</h2>
+          <div id="queue-list"></div>
+        </div>
+        <div class="detail-col">
+          <div class="panel" id="detail-panel">
+            <h2>Lead detail</h2>
+            <div id="detail-empty" class="muted">Select a lead from the queue.</div>
+            <div id="detail-body" class="hidden"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    const PRELOADED_LEADS = [
+      { id: "INT-2026-08709", name: "James Carter", source: "phone_intake", state: "TX", confidence: 81, timeAgo: "8 min ago", flaggedFields: 2, fieldsVerified: 27, status: "review_ready" },
+      { id: "INT-2026-08706", name: "David Park", source: "website_lead_form", state: "CA", confidence: 96, timeAgo: "14 min ago", flaggedFields: 0, fieldsVerified: 29, status: "review_ready" },
+    ];
+
+    const MICHAEL_LEAD = {
+      id: "INT-2026-08711",
+      name: "Michael Chen",
+      source: "website_lead_form",
+      state: "CA",
+      confidence: 94,
+      timeAgo: "just now",
+      flaggedFields: 1,
+      fieldsVerified: 29,
+      status: "review_ready",
+      isNew: true,
+    };
+
+    const MICHAEL_SECTIONS = [
+      { title: "Patient information", rows: [
+        ["First name", "Michael"], ["Last name", "Chen"], ["Email", "m.chen.demo@example.com"], ["Phone", "(415) 555-0142"],
+        ["Date of birth", "03/22/1988"], ["Occupation", "Software Engineer"], ["Employer", "Bay Area Tech Co."], ["Job title", "Senior Engineer"],
+        ["Job demands", "Desk Job"], ["Education", "Masters"], ["Ethnicity", "Asian"],
+      ]},
+      { title: "Consultation & family", rows: [
+        ["Relationship status", "Married"], ["Wish more children", "No"], ["Consider adoption", "No"], ["Vasectomy duration", "About 1 year"],
+        ["Considered tubal ligation", "No"], ["Temporary methods considered", "Yes"], ["Children count", "2"],
+      ]},
+      { title: "Medical & contacts", rows: [
+        ["Current methods", "Condoms"], ["Prior methods", "Condoms, Withdrawal"], ["Religion conflict", "No"], ["Sexual concerns", "No"],
+        ["Genetic condition", "No"], ["Emergency name", "Jennifer Chen"], ["Emergency phone", "(415) 555-0188"], ["Emergency relationship", "Spouse"],
+        ["How heard", "Google"], ["Additional notes", "Available weekday mornings…"],
+      ]},
+    ];
+
+    let leads = [...PRELOADED_LEADS];
+    let selectedId = PRELOADED_LEADS[0].id;
+    let demoState = "idle";
+    let runId = null;
+    let pollTimer = null;
+    let pollFailures = 0;
+    let runStartedAt = 0;
+    let lastLogLine = "";
+    let lastPollLog = "";
+
+    function esc(s) {
+      const d = document.createElement("div");
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
+    function renderQueue() {
+      const el = document.getElementById("queue-list");
+      el.innerHTML = leads.map((L) => {
+        const sel = L.id === selectedId ? " selected" : "";
+        const nb = L.isNew ? '<span class="badge new">New</span>' : "";
+        return (
+          '<div class="lead-card' + sel + '" data-id="' + esc(L.id) + '">' +
+          '<div class="row"><span class="name">' + esc(L.name) + "</span>" + nb + "</div>" +
+          '<div class="meta">' + esc(L.id) + " · " + esc(L.source) + " · " + esc(L.state) + "</div>" +
+          '<div class="meta">' + esc(L.timeAgo) + " · " + L.flaggedFields + " flagged · " + L.fieldsVerified + " fields verified</div>" +
+          '<div class="bar-wrap"><div class="bar" style="width:' + L.confidence + '%"></div></div>' +
+          '<div class="meta" style="margin-top:6px;">Confidence ' + L.confidence + "%</div></div>"
+        );
+      }).join("");
+      el.querySelectorAll(".lead-card").forEach((c) => {
+        c.addEventListener("click", () => {
+          selectedId = c.getAttribute("data-id");
+          renderQueue();
+          renderDetail();
+        });
+      });
+    }
+
+    function renderDetail() {
+      const L = leads.find((x) => x.id === selectedId);
+      const empty = document.getElementById("detail-empty");
+      const body = document.getElementById("detail-body");
+      if (!L) {
+        empty.classList.remove("hidden");
+        body.classList.add("hidden");
+        return;
+      }
+      empty.classList.add("hidden");
+      body.classList.remove("hidden");
+      let html = '<div class="row" style="justify-content:space-between;margin-bottom:12px;"><div><strong style="font-size:18px;">' + esc(L.name) + "</strong><div class=\"muted\">" + esc(L.id) + "</div></div>";
+      html += '<span class="badge">' + esc(L.status.replace(/_/g, " ")) + "</span></div>";
+      html += '<div class="detail-section"><h3>Agent run log</h3><div class="log-lines" id="detail-log"></div></div>';
+
+      if (L.id === MICHAEL_LEAD.id) {
+        MICHAEL_SECTIONS.forEach((sec) => {
+          html += '<div class="detail-section"><h3>' + esc(sec.title) + "</h3><div class=\"kv\">";
+          sec.rows.forEach(([k, v]) => { html += "<div class=\"k\">" + esc(k) + "</div><div>" + esc(v) + "</div>"; });
+          html += "</div></div>";
+        });
+        html += '<div class="detail-section"><h3>Audit trail</h3><div class="audit">';
+        html += "<div>14:32:08 UTC · Lead ingested from website_lead_form (demo)</div>";
+        html += "<div>14:32:09 UTC · Parse & score completed (static confidence map)</div>";
+        html += "<div>14:32:18 UTC · Browser session started · DrSnip consultation intake</div>";
+        html += "<div>14:35:02 UTC · Form submitted · confirmation page reached</div></div></div>";
+        html += '<div class="actions"><button type="button" class="btn btn-ghost" id="btn-shot">View screenshot</button><button type="button" class="btn btn-ghost">Edit</button><button type="button" class="btn btn-primary" id="btn-ede">Submit to EDE</button></div>';
+      } else {
+        html += '<div class="detail-section"><h3>Agent run log</h3><div class="muted">Prior batch run (demo placeholder).</div></div>';
+        html += '<div class="detail-section"><h3>Audit trail</h3><div class="audit"><div>Stub entry for demo queue.</div></div></div>';
+        html += '<div class="actions"><button type="button" class="btn btn-ghost">Edit</button><button type="button" class="btn btn-primary">Submit to EDE</button></div>';
+      }
+      body.innerHTML = html;
+      const logEl = document.getElementById("detail-log");
+      if (logEl) {
+        if (L.id === MICHAEL_LEAD.id) {
+          logEl.textContent = lastLogLine || "Run completed. See sections below for captured field values.";
+        } else {
+          logEl.textContent = "[08:14:02] OK  Intake normalized\n[08:14:03] INFO  Routed to review queue (demo)";
+        }
+      }
+      const shot = document.getElementById("btn-shot");
+      if (shot) shot.addEventListener("click", () => window.alert("Screenshot path is on the agent machine (tmp run folder). Demo only."));
+      const ede = document.getElementById("btn-ede");
+      if (ede) ede.addEventListener("click", () => window.alert("Submitted to EDE (demo). No backend action."));
+    }
+
+    function setDemoState(state) {
+      demoState = state;
+      document.getElementById("run-card-idle").classList.toggle("hidden", state !== "idle");
+      document.getElementById("run-card-progress").classList.toggle("hidden", state !== "running");
+      document.getElementById("run-card-complete").classList.toggle("hidden", state !== "complete");
+      if (state !== "error") {
+        document.getElementById("run-error").classList.add("hidden");
+        document.getElementById("btn-retry").classList.add("hidden");
+      }
+      document.getElementById("btn-run").disabled = state === "running";
+    }
+
+    function showError(msg) {
+      demoState = "error";
+      const e = document.getElementById("run-error");
+      e.textContent = msg;
+      e.classList.remove("hidden");
+      document.getElementById("btn-retry").classList.remove("hidden");
+      document.getElementById("run-card-idle").classList.remove("hidden");
+      document.getElementById("run-card-progress").classList.add("hidden");
+      document.getElementById("run-card-complete").classList.add("hidden");
+      document.getElementById("btn-run").disabled = false;
+    }
+
+    function resetToIdle() {
+      if (pollTimer) clearInterval(pollTimer);
+      pollTimer = null;
+      runId = null;
+      pollFailures = 0;
+      document.getElementById("run-error").classList.add("hidden");
+      document.getElementById("btn-retry").classList.add("hidden");
+      setDemoState("idle");
+    }
+
+    function updateProgress(st) {
+      const pct = st.sections_total ? Math.min(100, Math.round((st.sections_completed / st.sections_total) * 100)) : 0;
+      document.getElementById("prog-bar").style.width = pct + "%";
+      document.getElementById("prog-section").textContent = st.current_section || "—";
+      document.getElementById("prog-fields").textContent = (st.fields_filled ?? 0) + " of " + (st.fields_total ?? 29) + " fields";
+      if (st.latest_log && st.latest_log !== lastPollLog) {
+        lastPollLog = st.latest_log;
+        lastLogLine = st.latest_log;
+        const log = document.getElementById("prog-log");
+        log.textContent = (log.textContent ? log.textContent + "\n" : "") + st.latest_log;
+        const lines = log.textContent.split("\n");
+        if (lines.length > 40) log.textContent = lines.slice(-40).join("\n");
+      }
+      document.getElementById("prog-status-text").textContent = st.state === "starting" ? "Initializing…" : "Working…";
+      const elapsed = (Date.now() - runStartedAt) / 1000;
+      const sec = st.sections_total && st.sections_completed != null
+        ? Math.max(0, (120 - elapsed) * (1 - st.sections_completed / st.sections_total))
+        : 90;
+      document.getElementById("prog-eta").textContent = "Rough ETA: ~" + Math.max(15, Math.round(sec)) + "s remaining (estimate)";
+    }
+
+    async function poll() {
+      if (!runId || demoState !== "running") return;
+      if (Date.now() - runStartedAt > 5 * 60 * 1000) {
+        if (pollTimer) clearInterval(pollTimer);
+        showError("Timed out after 5 minutes waiting for the agent.");
+        return;
+      }
+      let res;
+      try {
+        res = await fetch("/api/demo/status/" + encodeURIComponent(runId));
+      } catch {
+        pollFailures++;
+        if (pollFailures >= 10) {
+          if (pollTimer) clearInterval(pollTimer);
+          showError("Lost connection to server after multiple retries.");
+        }
+        return;
+      }
+      pollFailures = 0;
+      let st;
+      try { st = await res.json(); } catch { return; }
+      if (st.state === "starting") {
+        updateProgress({ ...st, sections_completed: 0, sections_total: 8, fields_filled: 0, fields_total: 29, current_section: "Initializing" });
+        return;
+      }
+      updateProgress(st);
+      if (st.state === "complete") {
+        if (pollTimer) clearInterval(pollTimer);
+        pollTimer = null;
+        const r = st.result || {};
+        const avgC = r.avg_confidence != null ? r.avg_confidence : 94;
+        const dur = r.duration || "—";
+        const summary = "Michael Chen · 29 fields filled · " + avgC + "% avg confidence · submitted in " + dur;
+        document.getElementById("complete-summary").textContent = "Run finished successfully.";
+        document.getElementById("complete-sub").textContent = summary;
+        setDemoState("complete");
+        leads = [MICHAEL_LEAD, ...PRELOADED_LEADS];
+        renderQueue();
+        setTimeout(() => {
+          selectedId = MICHAEL_LEAD.id;
+          renderQueue();
+          renderDetail();
+        }, 1000);
+      } else if (st.state === "error") {
+        if (pollTimer) clearInterval(pollTimer);
+        pollTimer = null;
+        showError(st.error || "Agent reported an error.");
+      }
+    }
+
+      document.getElementById("btn-run").addEventListener("click", async () => {
+      pollFailures = 0;
+      lastPollLog = "";
+      document.getElementById("prog-log").textContent = "";
+      lastLogLine = "";
+      try {
+        const res = await fetch("/api/demo/run-intake", { method: "POST", headers: { "Content-Type": "application/json" } });
+        if (!res.ok) {
+          const t = await res.text();
+          showError("Could not start agent: " + res.status + " " + t);
+          return;
+        }
+        const j = await res.json();
+        runId = j.run_id;
+        runStartedAt = Date.now();
+        setDemoState("running");
+        pollTimer = setInterval(poll, 1500);
+        poll();
+      } catch (e) {
+        showError(String(e.message || e));
+      }
+    });
+
+    document.getElementById("btn-again").addEventListener("click", resetToIdle);
+    document.getElementById("btn-retry").addEventListener("click", () => {
+      document.getElementById("run-error").classList.add("hidden");
+      resetToIdle();
+    });
+
+    renderQueue();
+    renderDetail();
+  </script>
+</body>
+</html>

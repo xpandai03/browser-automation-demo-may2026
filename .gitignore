@@ -30,3 +30,4 @@ ENV/
 .DS_Store
 node_modules/
 browser-agent-design/
+.venv_demo/

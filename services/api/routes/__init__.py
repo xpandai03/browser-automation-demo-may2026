@@ -5,6 +5,7 @@ from .food_delivery import router as food_delivery_router
 from .therapy_notes import router as therapy_notes_router
 from .extract import router as extract_router
 from ..proxy_sanity import router as proxy_sanity_router
+from .demo_dashboard import router as demo_dashboard_router
 
 __all__ = [
     "workflow_router",
@@ -14,4 +15,5 @@ __all__ = [
     "therapy_notes_router",
     "extract_router",
     "proxy_sanity_router",
+    "demo_dashboard_router",
 ]

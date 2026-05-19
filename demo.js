@@ -9,8 +9,83 @@ const { chromium } = require("playwright");
 const path = require("path");
 const os = require("os");
 const crypto = require("crypto");
+const fs = require("fs");
 
 const PACING_MS_AFTER_LOAD = 2200;
+
+/** Optional: node demo.js [--status-file /path/to.json] [--run-id server-supplied-id] */
+function parseDemoArgs() {
+  const argv = process.argv.slice(2);
+  let statusFile = null;
+  let runIdArg = null;
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--status-file" && argv[i + 1]) {
+      statusFile = argv[i + 1];
+      i++;
+    } else if (argv[i] === "--run-id" && argv[i + 1]) {
+      runIdArg = argv[i + 1];
+      i++;
+    }
+  }
+  return { statusFile, runIdArg };
+}
+
+const _demoArgs = parseDemoArgs();
+const STATUS_FILE = _demoArgs.statusFile;
+const SECTIONS_TOTAL = 8;
+
+let lastStatusLog = "";
+let lastSectionLabel = "";
+
+function fieldsFilledForStatus() {
+  return Math.min(29, Math.round((filledCount / 48) * 29));
+}
+
+function writeStatusJson(partial) {
+  if (!STATUS_FILE) return;
+  const started = typeof globalThis.__demoStartedAt === "string" ? globalThis.__demoStartedAt : new Date().toISOString();
+  const rid = typeof globalThis.__demoRunId === "string" ? globalThis.__demoRunId : "local";
+  const payload = {
+    run_id: rid,
+    state: "running",
+    started_at: started,
+    current_section: lastSectionLabel,
+    sections_completed: typeof globalThis.__demoSectionsDone === "number" ? globalThis.__demoSectionsDone : 0,
+    sections_total: SECTIONS_TOTAL,
+    fields_filled: fieldsFilledForStatus(),
+    fields_total: 29,
+    latest_log: lastStatusLog,
+    screenshot_path: null,
+    result: null,
+    ...partial,
+  };
+  try {
+    fs.writeFileSync(STATUS_FILE, JSON.stringify(payload, null, 2));
+  } catch (e) {
+    console.error(`[status-file] write failed: ${e.message}`);
+  }
+}
+
+function bumpSection(label, completedIndex) {
+  lastSectionLabel = label;
+  globalThis.__demoSectionsDone = completedIndex;
+  writeStatusJson({
+    current_section: label,
+    sections_completed: completedIndex,
+    fields_filled: fieldsFilledForStatus(),
+    latest_log: lastStatusLog,
+  });
+}
+
+let statusDebounceTimer = null;
+function scheduleStatusFlush() {
+  if (!STATUS_FILE) return;
+  if (statusDebounceTimer) clearTimeout(statusDebounceTimer);
+  statusDebounceTimer = setTimeout(() => {
+    statusDebounceTimer = null;
+    writeStatusJson({});
+  }, 500);
+}
 
 const FORM_URL = "https://form.jotform.com/ITSnip/drsnip-consultation-intake";
 
@@ -158,6 +233,8 @@ function logFieldOk(key, label, value, indent = "    ") {
   const display = String(value).replace(/\s+/g, " ").slice(0, 40);
   logLine("OK", `${indent}filled ${pad(label, 22)} = ${pad(display, 28)} [conf: ${confOf(key)}%]`);
   filledCount += 1;
+  lastStatusLog = `filled ${label} = ${display} [conf: ${confOf(key)}%]`;
+  scheduleStatusFlush();
 }
 
 function logParseOk(key, value) {
@@ -296,7 +373,7 @@ async function waitPartnerVisible(page) {
   await page.locator("#id_12").waitFor({ state: "visible", timeout: 15000 }).catch(() => {});
 }
 
-async function confirmSubmit(page, runId) {
+async function confirmSubmit(page) {
   const deadline = Date.now() + 60000;
   while (Date.now() < deadline) {
     const url = page.url();
@@ -353,7 +430,21 @@ async function clickSubmit(page) {
 }
 
 async function main() {
-  const runId = `run-${crypto.randomBytes(4).toString("hex")}-${Date.now()}`;
+  const cliRunId = _demoArgs.runIdArg;
+  const runId = cliRunId || `run-${crypto.randomBytes(4).toString("hex")}-${Date.now()}`;
+  globalThis.__demoRunId = runId;
+  globalThis.__demoStartedAt = new Date().toISOString();
+  globalThis.__demoSectionsDone = 0;
+
+  if (STATUS_FILE) {
+    writeStatusJson({
+      state: "running",
+      current_section: "Initializing",
+      sections_completed: 0,
+      latest_log: "Agent starting",
+    });
+  }
+
   const t0 = Date.now();
   filledCount = 0;
   confidencesUsed.length = 0;
@@ -398,11 +489,13 @@ async function main() {
   for (const [k, v] of parseOrder) {
     logParseOk(k, v);
   }
+  if (STATUS_FILE) bumpSection("Enrichment (simulated)", 1);
 
   banner("Step 2 · Enrichment (simulated)");
   logLine("INFO", "  → Email domain reputation lookup … clean (demo stub)");
   logLine("INFO", "  → Duplicate lead search … no conflicting intake (demo stub)");
   logLine("GATE", "  → No PII persisted — in-memory only for this demo run");
+  if (STATUS_FILE) bumpSection("Launching Chromium", 2);
 
   banner("Step 3 · Browser agent · DrSnip intake form");
   logLine("INFO", `Launching headed Chromium → ${FORM_URL}`);
@@ -422,6 +515,10 @@ async function main() {
     logLine("OK", "Page loaded · DrSnip Consultation Intake");
     logLine("INFO", "Waiting for form scripts and conditional rules …");
     await page.waitForTimeout(PACING_MS_AFTER_LOAD);
+    if (STATUS_FILE) {
+      lastStatusLog = "Page loaded · DrSnip Consultation Intake";
+      bumpSection("Patient Information", 3);
+    }
 
     await sectionBanner(page, "→ Section: Patient Information");
     await fillTextByStrategies(page, "first_name", "first_name", PATIENT.first_name, [
@@ -471,6 +568,7 @@ async function main() {
     await selectByLabel(page, "job_demands", "job_demands", "#input_6", PATIENT.job_demands);
     await selectByLabel(page, "education", "education", "#input_7", PATIENT.education);
     await selectByLabel(page, "ethnicity", "ethnicity", "#input_9", PATIENT.ethnicity);
+    if (STATUS_FILE) bumpSection("Consultation Information", 4);
 
     await sectionBanner(page, "→ Section: Consultation Information");
     await selectByLabel(page, "relationship_status", "relationship_status", "#input_11", PATIENT.relationship_status);
@@ -499,6 +597,7 @@ async function main() {
     ]);
     await selectByLabel(page, "relationship_status", "marriage_you", "#input_20", DEMO_PARTNER.marriage_you);
     await selectByLabel(page, "relationship_status", "marriage_spouse", "#input_21", DEMO_PARTNER.marriage_spouse);
+    if (STATUS_FILE) bumpSection("Children Information", 5);
 
     await sectionBanner(page, "→ Section: Children Information");
     await fillTextByStrategies(page, "num_children", "num_children", PATIENT.num_children, [
@@ -522,6 +621,7 @@ async function main() {
       await selectByLabel(page, "num_children", `child_${n}_gender`, genSel, c.gender);
       await clickRadioByName(page, "num_children", `child_${n}_dependent`, radioName, c.dependent);
     }
+    if (STATUS_FILE) bumpSection("Family planning", 6);
 
     await sectionBanner(page, "→ Section: Family Planning");
     await clickRadioByName(page, "wish_more_children", "wish_more_children", "q58_q58_radio56", PATIENT.wish_more_children);
@@ -555,6 +655,7 @@ async function main() {
         }
       }
     }
+    if (STATUS_FILE) bumpSection("Medical & personal", 7);
 
     await sectionBanner(page, "→ Section: Medical & Personal");
     await clickRadioByName(page, "religion_conflict", "religion_conflict", "q68_q68_radio66", PATIENT.religion_conflict);
@@ -589,6 +690,7 @@ async function main() {
       { selector: "#input_90" },
       { label: "anything else" },
     ]);
+    if (STATUS_FILE) bumpSection("Submitting", 8);
 
     logLine("INFO", `All sections addressed · ${filledCount} field operations logged`);
 
@@ -596,6 +698,14 @@ async function main() {
     const clicked = await clickSubmit(page);
     if (!clicked) {
       await page.screenshot({ path: path.join(os.tmpdir(), `${runId}-submit-miss.png`), fullPage: true });
+      if (STATUS_FILE) {
+        writeStatusJson({
+          state: "error",
+          error: "Submit button not found",
+          result: null,
+          screenshot_path: path.join(os.tmpdir(), `${runId}-submit-miss.png`),
+        });
+      }
       process.exitCode = 1;
       return;
     }
@@ -604,24 +714,56 @@ async function main() {
     if (outcome.captcha) {
       logLine("FLAG", "Captcha or bot challenge detected — stop for human review");
       await page.screenshot({ path: path.join(os.tmpdir(), `${runId}-captcha.png`), fullPage: true });
+      if (STATUS_FILE) {
+        writeStatusJson({
+          state: "error",
+          error: "Captcha or bot challenge detected",
+          result: null,
+          screenshot_path: path.join(os.tmpdir(), `${runId}-captcha.png`),
+        });
+      }
       process.exitCode = 1;
       return;
     }
     if (outcome.validation) {
       logLine("FLAG", "Form validation error after submit — check required fields");
       await page.screenshot({ path: path.join(os.tmpdir(), `${runId}-validation.png`), fullPage: true });
+      if (STATUS_FILE) {
+        writeStatusJson({
+          state: "error",
+          error: "Form validation error after submit",
+          result: null,
+          screenshot_path: path.join(os.tmpdir(), `${runId}-validation.png`),
+        });
+      }
       process.exitCode = 1;
       return;
     }
     if (outcome.limit) {
       logLine("FLAG", "Form rejected duplicate submission (Jotform limit). Use a fresh browser profile or wait before re-demo.");
       await page.screenshot({ path: path.join(os.tmpdir(), `${runId}-limit.png`), fullPage: true });
+      if (STATUS_FILE) {
+        writeStatusJson({
+          state: "error",
+          error: "Jotform submission limit or duplicate blocked",
+          result: null,
+          screenshot_path: path.join(os.tmpdir(), `${runId}-limit.png`),
+        });
+      }
       process.exitCode = 1;
       return;
     }
     if (!outcome.ok) {
       logLine("FLAG", "Could not confirm thank-you state within timeout");
       await page.screenshot({ path: path.join(os.tmpdir(), `${runId}-timeout.png`), fullPage: true });
+      if (STATUS_FILE) {
+        writeStatusJson({
+          state: "error",
+          error: "Confirmation timeout — thank-you state not detected",
+          result: null,
+          screenshot_path: path.join(os.tmpdir(), `${runId}-timeout.png`),
+        });
+      }
       process.exitCode = 1;
       return;
     }
@@ -636,6 +778,25 @@ async function main() {
       ? Math.round(confidencesUsed.reduce((a, b) => a + b, 0) / confidencesUsed.length)
       : 0;
     const dur = `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
+
+    if (STATUS_FILE) {
+      writeStatusJson({
+        state: "complete",
+        sections_completed: SECTIONS_TOTAL,
+        current_section: "Complete",
+        fields_filled: 29,
+        fields_total: 29,
+        latest_log: `Submitted · ${PATIENT.first_name} ${PATIENT.last_name} · ${dur}`,
+        screenshot_path: shotPath,
+        result: {
+          intake_id: PATIENT.intake_id,
+          fields_filled: filledCount,
+          avg_confidence: avg,
+          duration: dur,
+          screenshot_path: shotPath,
+        },
+      });
+    }
 
     banner("Run summary");
     logLine("OK", "Run complete");
@@ -655,5 +816,16 @@ async function main() {
 
 main().catch((e) => {
   logLine("FLAG", e.stack || String(e));
+  if (STATUS_FILE) {
+    try {
+      writeStatusJson({
+        state: "error",
+        error: String(e && e.message ? e.message : e),
+        result: null,
+      });
+    } catch (_) {
+      /* ignore */
+    }
+  }
   process.exit(1);
 });
